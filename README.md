@@ -130,18 +130,27 @@ The system operates across three distinct hardware buses:
 
 ---
 
+## 🌐 Live Production Deployment
+
+- **Live URL:** [https://campuskeyifhe.vercel.app](https://campuskeyifhe.vercel.app)
+- **Status:** Active & Production Ready
+- **Hosting:** Vercel Global Edge Network
+- **Supabase Project:** `qnuewgwuiubpdlnatuez`
+
+---
+
 ## 🚢 Deploying to Vercel (Zero-Config)
 
-This application is built with standard HTML5, CSS3, and modern ES6 JavaScript modules with no build step required. It can be deployed directly to Vercel in seconds:
+This application is built with standard HTML5, CSS3, and modern ES6 JavaScript modules with no build step required. It is deployed directly to Vercel:
 
 ### Option 1: Via Vercel Web Dashboard (Easiest)
-1. Push your repository to GitHub or GitLab.
+1. Push your repository to GitHub (`https://github.com/shivamanikolu/CAMPUSKEY`).
 2. Log into [vercel.com](https://vercel.com) and click **"Add New Project"**.
 3. Import this repository.
 4. Framework Preset: Choose **"Other"**.
 5. Root Directory: `./` (or leave default).
 6. Click **"Deploy"**.
-7. Your site is instantly live with custom HTTPS URL!
+7. Your site is instantly live at [https://campuskeyifhe.vercel.app](https://campuskeyifhe.vercel.app)!
 
 ### Option 2: Via Vercel CLI
 ```bash
