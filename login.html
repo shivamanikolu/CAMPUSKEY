@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>CampusKey — Sign In</title>
+  <meta name="description" content="Sign in to the CampusKey RFID Attendance & Identity Management System." />
+
+  <!-- Favicon / Minimalist SVG Icon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231D1D1F'><rect x='2' y='5' width='20' height='14' rx='3'/><circle cx='7' cy='15' r='1.2'/><path d='M12 15h6'/></svg>" />
+
+  <!-- Core & Auth Stylesheets -->
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/auth.css" />
+
+  <!-- Supabase CDN Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="auth-page">
+
+  <div class="auth-container">
+    <div class="auth-card">
+      
+      <!-- Brand Header -->
+      <div class="auth-header">
+        <a href="login.html" class="auth-brand">
+          <div class="auth-brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+              <circle cx="7" cy="15" r="1"></circle>
+              <path d="M12 15h6"></path>
+            </svg>
+          </div>
+          <div class="auth-brand-text">
+            CAMPUS<span>KEY</span> <span class="auth-brand-badge">IoT RFID</span>
+          </div>
+        </a>
+        <h1 class="auth-title">Sign in to CampusKey</h1>
+        <p class="auth-subtitle">Enter your administrative credentials to access the attendance system.</p>
+      </div>
+
+      <!-- Feedback Alert Box -->
+      <div class="auth-alert" id="login-alert" role="alert" aria-live="polite">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span id="login-alert-text"></span>
+      </div>
+
+      <!-- Login Form -->
+      <form class="auth-form" id="login-form" novalidate>
+        <div class="auth-field">
+          <label class="auth-label" for="login-email">Email Address</label>
+          <div class="auth-input-wrapper">
+            <input 
+              type="email" 
+              id="login-email" 
+              name="email" 
+              class="auth-input" 
+              placeholder="john@gmail.com" 
+              autocomplete="username" 
+              required 
+            />
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <div class="auth-label-row">
+            <label class="auth-label" for="login-password">Password</label>
+            <a href="#" class="auth-link" id="btn-forgot-password">Forgot password?</a>
+          </div>
+          <div class="auth-input-wrapper">
+            <input 
+              type="password" 
+              id="login-password" 
+              name="password" 
+              class="auth-input" 
+              placeholder="••••••••••••" 
+              autocomplete="current-password" 
+              required 
+            />
+            <button type="button" class="auth-password-toggle" id="btn-toggle-password" aria-label="Show password">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="auth-btn-submit" id="login-submit-btn">
+          <span>Sign In</span>
+        </button>
+      </form>
+
+      <!-- Institutional Footer -->
+      <div class="auth-footer">
+        <div class="auth-footer-badge">
+          <span></span> Supabase Authenticated Session
+        </div>
+        <div>ICFAI School of Science &amp; Technology • ICSD</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Isolated Auth Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+</body>
+</html>

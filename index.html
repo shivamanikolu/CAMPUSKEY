@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>CampusKey — RFID Attendance & Identity</title>
+  <meta name="description" content="CampusKey: IoT-based RFID Attendance & Identity System integrating ESP8266, Supabase PostgreSQL, and modern web analytics." />
+  
+  <!-- Favicon / Minimalist SVG Icon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231D1D1F'><rect x='2' y='5' width='20' height='14' rx='3'/><circle cx='7' cy='15' r='1.2'/><path d='M12 15h6'/></svg>" />
+
+  <!-- Core Stylesheet -->
+  <link rel="stylesheet" href="css/style.css" />
+  <!-- Auth Styles & Guard -->
+  <link rel="stylesheet" href="css/auth.css" />
+
+  <!-- Supabase CDN Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Isolated Auth Guard -->
+  <script src="js/auth.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header id="main-navbar"></header>
+
+  <!-- Main Workspace -->
+  <main class="main-wrapper">
+    
+    <!-- Page Header & Quick Controls -->
+    <section class="page-header">
+      <div class="page-title-wrap">
+        <h2>Dashboard</h2>
+        <div class="page-subtitle">Real-time telemetry, check-ins, and institutional attendance overview</div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-secondary" onclick="refreshDashboardMetrics(); showToast('Telemetry metrics refreshed', 'info');">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Refresh Feed
+        </button>
+        <a href="attendance.html" class="btn-secondary">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Daily Sheet
+        </a>
+      </div>
+    </section>
+
+    <!-- 4 Live Metric Cards -->
+    <section class="metrics-grid">
+      <!-- Card 1: Registered Students -->
+      <div class="metric-card" style="--card-accent: #6366f1;">
+        <div class="metric-header">
+          <span class="metric-label">Enrolled Students</span>
+          <div class="metric-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          </div>
+        </div>
+        <div class="metric-value-row">
+          <div class="metric-value" id="stat-students">0</div>
+          <span class="metric-badge badge-neutral">Active Directory</span>
+        </div>
+        <div class="metric-sub" style="margin-top: 0.5rem;">BCA & Science Departments</div>
+      </div>
+
+      <!-- Card 2: Registered Faculty -->
+      <div class="metric-card" style="--card-accent: #8b5cf6;">
+        <div class="metric-header">
+          <span class="metric-label">Registered Faculty</span>
+          <div class="metric-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+        </div>
+        <div class="metric-value-row">
+          <div class="metric-value" id="stat-faculty">0</div>
+          <span class="metric-badge badge-neutral">Professors & Staff</span>
+        </div>
+        <div class="metric-sub" style="margin-top: 0.5rem;">Academic & Lab Instructors</div>
+      </div>
+
+      <!-- Card 3: Today's Attendance -->
+      <div class="metric-card" style="--card-accent: #10b981;">
+        <div class="metric-header">
+          <span class="metric-label">Today's Check-ins</span>
+          <div class="metric-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+        </div>
+        <div class="metric-value-row">
+          <div class="metric-value" id="stat-today-count">0</div>
+          <span class="metric-badge badge-success" id="stat-today-pct">0% Present</span>
+        </div>
+        <div class="metric-sub" style="margin-top: 0.5rem;">Single scan enforced per user</div>
+      </div>
+
+      <!-- Card 4: Failed / Diagnostic Scans -->
+      <div class="metric-card" style="--card-accent: #ef4444;">
+        <div class="metric-header">
+          <span class="metric-label">Alerts & Failed Scans</span>
+          <div class="metric-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+        </div>
+        <div class="metric-value-row">
+          <div class="metric-value" id="stat-errors-count">0</div>
+          <a href="errors.html" class="metric-badge badge-danger" style="text-decoration: none;">View Diagnostics</a>
+        </div>
+        <div class="metric-sub" style="margin-top: 0.5rem;">Duplicates, unregistered & errors</div>
+      </div>
+    </section>
+
+    <!-- Dual-Mode System State Controller Banner -->
+    <section class="state-banner" id="system-state-banner">
+      <div class="state-banner-info">
+        <div class="state-rfid-pulse">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4.93 4.93a10 10 0 0 1 14.14 0"/><path d="M7.76 7.76a6 6 0 0 1 8.48 0"/><circle cx="12" cy="12" r="2"/>
+          </svg>
+        </div>
+        <div class="state-banner-text">
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span class="metric-badge badge-success" id="state-mode-badge">LIVE ATTENDANCE MODE</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted);">Table: public.system_state (id=1)</span>
+          </div>
+          <h3 id="state-title" style="margin-top: 0.25rem;">Normal Attendance Check-In Active</h3>
+          <p id="state-desc">The ESP8266 polls card IDs and records daily attendance via atomic database RPC function.</p>
+        </div>
+      </div>
+      <div>
+        <button id="state-action-btn" class="btn-primary pulse-glow" onclick="openRegistrationModal()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Start 60s Registration</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 2-Column Analytics & Live Stream Grid -->
+    <div class="dashboard-grid">
+      
+      <!-- LEFT COLUMN: Charts & Virtual Hardware Feedback -->
+      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        
+        <!-- Attendance Trend Chart -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              Weekly Attendance Inflow
+            </div>
+            <span class="metric-badge badge-neutral">Last 7 Days</span>
+          </div>
+          <div style="height: 240px; position: relative;">
+            <canvas id="attendanceTrendChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Real-Time Hardware Replica (16x2 LCD & Breadboard LEDs) -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              ESP8266 Live Terminal Mirror
+            </div>
+            <span class="system-status-pill" style="padding: 0.25rem 0.65rem; font-size: 0.72rem;">
+              <span class="pulse-dot"></span> Active Sync
+            </span>
+          </div>
+
+          <div class="lcd-container">
+            <div class="lcd-hardware-frame">
+              <div class="lcd-line" id="lcd-display-line1">CAMPUSKEY READY </div>
+              <div class="lcd-line" id="lcd-display-line2">Tap ID Card...  </div>
+            </div>
+
+            <!-- Breadboard LED Indicators -->
+            <div class="lcd-hardware-indicators">
+              <div class="led-group">
+                <div class="led-indicator">
+                  <div class="led-bulb green" id="led-green-bulb"></div>
+                  <span>Pin D1 (Green LED: Granted)</span>
+                </div>
+                <div class="led-indicator">
+                  <div class="led-bulb red" id="led-red-bulb"></div>
+                  <span>Pin D2 (Red LED: Denied/Wait)</span>
+                </div>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono);">
+                Addr: 0x27 • 16×2 HD44780
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: Real-Time Live Activity Stream -->
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Live RFID Scan Activity
+          </div>
+          <span class="system-status-pill" style="padding: 0.25rem 0.65rem; font-size: 0.72rem;">
+            <span class="pulse-dot"></span> Live Realtime
+          </span>
+        </div>
+
+        <div class="scan-feed-list" id="scan-feed-container">
+          <!-- Feed items injected dynamically -->
+          <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+            Connecting live stream...
+          </div>
+        </div>
+
+        <div style="margin-top: 1.25rem; padding-top: 0.85rem; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.75rem; color: var(--text-muted);">Connected to Supabase PostgreSQL</span>
+          <a href="attendance.html" style="font-size: 0.78rem; color: var(--cyan); font-weight: 600; text-decoration: none;">
+            Full Attendance Sheet &rarr;
+          </a>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- JavaScript Suite -->
+  <script src="js/config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/nav-component.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>

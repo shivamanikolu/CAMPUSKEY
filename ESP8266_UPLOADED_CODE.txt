@@ -1,0 +1,224 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <SPI.h>
+#include <MFRC522.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <ArduinoJson.h>
+
+// ======================== 1. NETWORK & LIVE DATABASE CONFIG ========================
+const char* WIFI_SSID       = "V2029";         // <-- Put your Wi-Fi Name here
+const char* WIFI_PASSWORD   = "shivamanikittu";     // <-- Put your Wi-Fi Password here
+const String SUPABASE_URL   = "https://qnuewgwuiubpdlnatuez.supabase.co";
+const String SUPABASE_ANON   = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFudWV3Z3d1aXVicGRsbmF0dWV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0NjM0NjUsImV4cCI6MjEwODAzOTQ2NX0.d6NxbXEw-X5rUmEe59nEGj9kvdSSky1SlNUen-3K6kI";
+const String DEVICE_SECRET  = "CAMPUSKEY_ESP8266_SECRET_2026";
+
+// ======================== 2. YOUR WORKING SAFE PIN BLUEPRINT =========================
+#define GREEN_LED_PIN D1   // Access Granted Indicator
+#define RED_LED_PIN   D2   // Access Denied / Error Indicator
+#define BUZZER_PIN    D0   // Audio Notification Beeper
+#define SS_PIN        D8   // RFID SDA / Chip Select Pin
+#define RST_PIN       255  // RFID RST tied directly to physical 3.3V power rail
+
+MFRC522 rfid(SS_PIN, RST_PIN);
+LiquidCrystal_I2C lcd(0x27, 16, 2); 
+
+unsigned long lastHealthCheck = 0;
+
+// ======================== 3. AUDIO-VISUAL CUES ENGINE ====================
+void showLCD(String line1, String line2) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(line1.substring(0, 16));
+  lcd.setCursor(0, 1);
+  lcd.print(line2.substring(0, 16));
+}
+
+void alertPattern(int count, int durationMs, int pauseMs, bool isSuccess) {
+  digitalWrite(GREEN_LED_PIN, isSuccess ? HIGH : LOW);
+  digitalWrite(RED_LED_PIN, isSuccess ? LOW : HIGH);
+  for (int i = 0; i < count; i++) {
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(durationMs);
+    digitalWrite(BUZZER_PIN, LOW);
+    if (i < count - 1) delay(pauseMs);
+  }
+  delay(1200);
+  digitalWrite(GREEN_LED_PIN, LOW);
+  digitalWrite(RED_LED_PIN, LOW);
+}
+
+// ======================== 4. CONTINUOUS HARDWARE WIRE CHECKS ==================
+bool verifyHardwareConnections() {
+  // Check 1: Verify I2C acknowledgement from LCD panel
+  Wire.beginTransmission(0x27);
+  if (Wire.endTransmission() != 0) {
+    // Flash Red Indicator sequence continuously if LCD communication drops out
+    for (int i = 0; i < 3; i++) {
+      digitalWrite(RED_LED_PIN, HIGH);
+      digitalWrite(BUZZER_PIN, HIGH);
+      delay(100);
+      digitalWrite(RED_LED_PIN, LOW);
+      digitalWrite(BUZZER_PIN, LOW);
+      delay(100);
+    }
+    return false;
+  }
+  
+  // Check 2: Verify SPI data path back from the RC522 chip register
+  byte v = rfid.PCD_ReadRegister(rfid.VersionReg);
+  if (v == 0x00 || v == 0xFF) {
+    showLCD("ERR: RFID WIRE", "Check SPI Pins");
+    digitalWrite(RED_LED_PIN, HIGH);
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(400);
+    digitalWrite(BUZZER_PIN, LOW);
+    return false;
+  }
+  return true;
+}
+
+// ======================== 5. INITIAL SYSTEM SETUP =============================
+void setup() {
+  Serial.begin(115200);
+  
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  
+  digitalWrite(GREEN_LED_PIN, LOW);
+  digitalWrite(RED_LED_PIN, LOW);
+  digitalWrite(BUZZER_PIN, LOW);
+
+  // Initialize your custom working I2C lines (SDA = D4, SCL = D3)
+  Wire.begin(D4, D3); 
+  lcd.init();
+  lcd.backlight();
+  
+  showLCD("CAMPUSKEY BOOT", "Checking HW...");
+  
+  SPI.begin();
+  rfid.PCD_Init();
+  delay(300);
+
+  // Lock system sequence if hardware initialization loops detect a fault
+  if (!verifyHardwareConnections()) {
+    delay(2000);
+  }
+
+  showLCD("CONNECTING WIFI", "Please Wait...");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 25) {
+    delay(500);
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    showLCD("CAMPUSKEY READY", "Tap ID Card...");
+    alertPattern(1, 100, 0, true);
+  } else {
+    showLCD("WIFI FAILED!", "Check Network");
+    alertPattern(2, 500, 200, false);
+  }
+}
+
+// ======================== 6. MAIN SCAN PROCESSING LOOP ========================================
+void loop() {
+  // Automated component self-test verification routine executed every 5 seconds
+  if (millis() - lastHealthCheck > 5000) {
+    lastHealthCheck = millis();
+    if (!verifyHardwareConnections()) return;
+    if (WiFi.status() != WL_CONNECTED) {
+      showLCD("WIFI LOST!", "Reconnecting...");
+      WiFi.reconnect();
+      return;
+    }
+  }
+
+  // Poll card entry parameters
+  if (!rfid.PICC_IsNewCardPresent()) return;
+  if (!rfid.PICC_ReadCardSerial()) {
+    showLCD("CARD READ ERROR", "Hold Card Steady");
+    alertPattern(3, 100, 100, false);
+    showLCD("CAMPUSKEY READY", "Tap ID Card...");
+    return;
+  }
+
+  // Format hardware address into 4-byte string container
+  String cardUID = "";
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    if (rfid.uid.uidByte[i] < 0x10) cardUID += "0";
+    cardUID += String(rfid.uid.uidByte[i], HEX);
+  }
+  cardUID.toUpperCase();
+  
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
+
+  showLCD("VERIFYING CARD", "UID: " + cardUID);
+
+  if (WiFi.status() != WL_CONNECTED) {
+    showLCD("API / WIFI ERROR", "Network Offline");
+    alertPattern(2, 600, 200, false);
+    showLCD("CAMPUSKEY READY", "Tap ID Card...");
+    return;
+  }
+
+  // Construct secure HTTPS POST request engine context back to Supabase database
+  WiFiClientSecure client;
+  client.setInsecure(); // Bypass local SSL certificate check for embedded parsing
+  HTTPClient http;
+  String rpcEndpoint = SUPABASE_URL + "/rest/v1/rpc/handle_card_scan";
+
+  if (http.begin(client, rpcEndpoint)) {
+    http.setTimeout(7000);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("apikey", SUPABASE_ANON);
+    http.addHeader("Authorization", "Bearer " + SUPABASE_ANON);
+    
+    String payload = "{\"p_card_uid\":\"" + cardUID + "\",\"p_device_key\":\"" + DEVICE_SECRET + "\"}";
+    int httpCode = http.POST(payload);
+
+    if (httpCode <= 0 || httpCode >= 500) {
+      showLCD("API UNREACHABLE", "Server Error");
+      alertPattern(2, 600, 200, false);
+    } else {
+      String response = http.getString();
+      StaticJsonDocument<512> doc;
+      DeserializationError err = deserializeJson(doc, response);
+
+      if (!err) {
+        String status = doc["status"].as<String>();
+        String lcd1   = doc["lcd1"].as<String>();
+        String lcd2   = doc["lcd2"].as<String>();
+        String code   = doc["code"].as<String>();
+
+        showLCD(lcd1, lcd2);
+
+        if (status == "SUCCESS") {
+          alertPattern(1, 150, 0, true);   // Green Blink + Short Beep = Success
+        } else if (status == "REGISTERED") {
+          alertPattern(2, 120, 100, true); // 2 Green Blinks = New Card Logged
+        } else if (code == "ALREADY_SCANNED") {
+          alertPattern(2, 300, 150, false); // 2 Medium Red Blinks = Duplicate Scan
+        } else {
+          alertPattern(1, 800, 0, false);   // 1 Long Red Warning Tone = Denied/Unregistered
+        }
+      } else {
+        showLCD("PARSE ERROR", "Bad JSON Resp");
+        alertPattern(2, 400, 150, false);
+      }
+    }
+    http.end();
+  } else {
+    showLCD("API CONN FAILED", "Check Configuration");
+    alertPattern(2, 600, 200, false);
+  }
+
+  delay(1500);
+  showLCD("CAMPUSKEY READY", "Tap ID Card...");
+}

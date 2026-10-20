@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>CampusKey — Users & Cards</title>
+  
+  <!-- Favicon / Minimalist SVG Icon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231D1D1F'><rect x='2' y='5' width='20' height='14' rx='3'/><circle cx='7' cy='15' r='1.2'/><path d='M12 15h6'/></svg>" />
+
+  <!-- Supabase CDN Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <!-- Canvas Confetti for Celebration Feedback -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Core Stylesheet -->
+  <link rel="stylesheet" href="css/style.css" />
+  <!-- Auth Styles & Guard -->
+  <link rel="stylesheet" href="css/auth.css" />
+  <!-- Isolated Auth Guard -->
+  <script src="js/auth.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header id="main-navbar"></header>
+
+  <!-- Main Container -->
+  <main class="main-wrapper">
+
+    <!-- Header Section -->
+    <section class="page-header">
+      <div class="page-title-wrap">
+        <h2>Users & Cards</h2>
+        <div class="page-subtitle">Identity directory, credential management, and RFID allocations</div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-primary" onclick="switchToManualUIDForm()">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Add User Manually
+        </button>
+      </div>
+    </section>
+
+    <!-- Student vs Faculty Directory Tabs -->
+    <div class="tabs-header">
+      <button class="tab-btn active" id="user-tab-students" onclick="switchUserTab('STUDENT')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        <span>Enrolled Students</span>
+        <span class="tab-counter" id="count-users-std">0</span>
+      </button>
+      <button class="tab-btn" id="user-tab-faculty" onclick="switchUserTab('FACULTY')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Faculty & Instructors</span>
+        <span class="tab-counter" id="count-users-fac">0</span>
+      </button>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="table-toolbar">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-users" placeholder="Search by name, roll no, card UID, mobile..." oninput="renderUsersDirectory()" />
+      </div>
+
+      <div class="filter-actions">
+        <!-- Branch / Dept Filter -->
+        <select id="filter-user-branch" class="select-filter" onchange="renderUsersDirectory()">
+          <option value="ALL">All Branches</option>
+          <option value="BACHELOR OF COMPUTER APPLICATIONS">BACHELOR OF COMPUTER APPLICATIONS</option>
+          <option value="BACHELOR OF TECHNOLOGY">BACHELOR OF TECHNOLOGY</option>
+          <option value="BACHELOR OF BUSINESS ADMINISTRATION">BACHELOR OF BUSINESS ADMINISTRATION</option>
+          <option value="BACHELOR OF SCIENCE">BACHELOR OF SCIENCE</option>
+          <option value="BACHELOR OF COMMERCE">BACHELOR OF COMMERCE</option>
+        </select>
+
+        <button class="btn-secondary" onclick="loadUsersList(); showToast('Directory refreshed', 'info');">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Sync
+        </button>
+      </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Full Name & Identifier</th>
+            <th>RFID Hardware UID</th>
+            <th>Branch / Designation</th>
+            <th>Mobile Contact</th>
+            <th>Account State</th>
+            <th>Enrolled Date</th>
+            <th>Profile Management</th>
+          </tr>
+        </thead>
+        <tbody id="users-table-body">
+          <tr>
+            <td colspan="7" style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+              Loading registered accounts from Supabase...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- Edit User Modal -->
+  <div class="modal-overlay" id="edit-user-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">Edit Identity Profile</div>
+          <div class="modal-sub">Modify student enrollment or faculty record</div>
+        </div>
+        <button class="modal-close-btn" onclick="closeEditUserModal()">&times;</button>
+      </div>
+
+      <form id="edit-profile-form" onsubmit="handleUpdateUserProfile(event)">
+        <input type="hidden" id="edit-user-id" />
+        
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">RFID Card UID (Hardware Key)</label>
+            <input type="text" id="edit-card-uid" class="form-control" readonly style="font-family: var(--font-mono); font-weight: 600;" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">User Category</label>
+            <select id="edit-user-type" class="form-control" required>
+              <option value="STUDENT">Student</option>
+              <option value="FACULTY">Faculty Member</option>
+            </select>
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label">Full Name</label>
+            <input type="text" id="edit-full-name" class="form-control" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Enrollment No / Employee ID</label>
+            <input type="text" id="edit-enrollment" class="form-control" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Branch *</label>
+            <select id="edit-branch" class="form-control" required>
+              <option value="BACHELOR OF COMPUTER APPLICATIONS">BACHELOR OF COMPUTER APPLICATIONS</option>
+              <option value="BACHELOR OF TECHNOLOGY">BACHELOR OF TECHNOLOGY</option>
+              <option value="BACHELOR OF BUSINESS ADMINISTRATION">BACHELOR OF BUSINESS ADMINISTRATION</option>
+              <option value="BACHELOR OF SCIENCE">BACHELOR OF SCIENCE</option>
+              <option value="BACHELOR OF COMMERCE">BACHELOR OF COMMERCE</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Course / Designation</label>
+            <input type="text" id="edit-course" class="form-control" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Mobile Number</label>
+            <input type="tel" id="edit-mobile" class="form-control" />
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label">Account Status</label>
+            <select id="edit-status" class="form-control">
+              <option value="true">Active (Allowed to Mark Attendance)</option>
+              <option value="false">Suspended / Inactive</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" onclick="closeEditUserModal()">Cancel</button>
+          <button type="submit" class="btn-primary" id="btn-submit-edit">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- JavaScript Suite -->
+  <script src="js/config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/nav-component.js"></script>
+  <script src="js/users.js"></script>
+</body>
+</html>

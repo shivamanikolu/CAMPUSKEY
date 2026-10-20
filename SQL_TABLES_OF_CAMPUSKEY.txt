@@ -1,0 +1,133 @@
+-- 1. Enable UUID capabilities
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- 2. Create the Master Users Table (Handles Students & Faculty)
+CREATE TABLE public.users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    card_uid VARCHAR(32) UNIQUE NOT NULL,
+    user_type VARCHAR(16) NOT NULL CHECK (user_type IN ('STUDENT', 'FACULTY')),
+    full_name VARCHAR(120) NOT NULL DEFAULT 'Pending Admin Registration',
+    branch VARCHAR(80) NOT NULL DEFAULT 'BCA / Science & Tech',
+    course_or_role VARCHAR(80) NOT NULL DEFAULT 'BCA',
+    enrollment_or_roll VARCHAR(50) UNIQUE,
+    mobile_number VARCHAR(20),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 3. Create Attendance Logs Table (Enforces unique constraint: 1 scan per user per day)
+CREATE TABLE public.attendance_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    card_uid VARCHAR(32) NOT NULL,
+    scan_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    check_in_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    status VARCHAR(20) NOT NULL DEFAULT 'PRESENT',
+    UNIQUE(user_id, scan_date)
+);
+
+-- 4. Create Diagnostic Error Logs Table (Feeds Admin Diagnostics Page)
+CREATE TABLE public.error_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    card_uid VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN_UID',
+    user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    user_name VARCHAR(120) DEFAULT 'Unknown / Unregistered',
+    error_code VARCHAR(40) NOT NULL,
+    error_message TEXT NOT NULL,
+    system_mode VARCHAR(20) NOT NULL DEFAULT 'ATTENDANCE',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 5. Create System State Controller Table
+CREATE TABLE public.system_state (
+    id INT PRIMARY KEY CHECK (id = 1),
+    mode VARCHAR(20) NOT NULL DEFAULT 'ATTENDANCE' CHECK (mode IN ('ATTENDANCE', 'REGISTRATION')),
+    mode_expires_at TIMESTAMPTZ,
+    last_registered_uid VARCHAR(32),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Insert baseline state configuration
+INSERT INTO public.system_state (id, mode) VALUES (1, 'ATTENDANCE')
+ON CONFLICT (id) DO NOTHING;
+
+-- 6. Disable direct database manipulation by enabling RLS
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.attendance_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.error_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.system_state ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admin Full Access" ON public.users FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Admin Attendance Access" ON public.attendance_logs FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Admin Error Access" ON public.error_logs FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Admin State Access" ON public.system_state FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- 7. Create Atomic API Processing Engine Function
+CREATE OR REPLACE FUNCTION public.handle_card_scan(
+    p_card_uid VARCHAR,
+    p_device_key VARCHAR
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_state RECORD;
+    v_user RECORD;
+    v_existing_att UUID;
+    v_new_user_id UUID;
+BEGIN
+    -- Security Key Authentication Check
+    IF p_device_key != 'CAMPUSKEY_ESP8266_SECRET_2026' THEN
+        RETURN jsonb_build_object('status', 'ERROR', 'code', 'UNAUTHORIZED_DEVICE', 'lcd1', 'SECURITY ALERT', 'lcd2', 'Invalid Dev Key');
+    END IF;
+
+    -- Manage registration timeout window
+    SELECT * INTO v_state FROM public.system_state WHERE id = 1;
+    IF v_state.mode = 'REGISTRATION' AND v_state.mode_expires_at < NOW() THEN
+        UPDATE public.system_state SET mode = 'ATTENDANCE', updated_at = NOW() WHERE id = 1;
+        v_state.mode := 'ATTENDANCE';
+    END IF;
+
+    -- Look up target card signature
+    SELECT * INTO v_user FROM public.users WHERE card_uid = UPPER(TRIM(p_card_uid));
+
+    -- MODE A: NEW REGISTER SYSTEM ACTIVATION
+    IF v_state.mode = 'REGISTRATION' THEN
+        IF FOUND THEN
+            INSERT INTO public.error_logs (card_uid, user_id, user_name, error_code, error_message, system_mode)
+            VALUES (UPPER(p_card_uid), v_user.id, v_user.full_name, 'REG_CONFLICT', 'Card already linked to an existing profile', 'REGISTRATION');
+            UPDATE public.system_state SET mode = 'ATTENDANCE', updated_at = NOW() WHERE id = 1;
+            RETURN jsonb_build_object('status', 'ERROR', 'code', 'USER_ALREADY_EXISTS', 'lcd1', 'USER EXISTS!', 'lcd2', 'Card In Use');
+        ELSE
+            INSERT INTO public.users (card_uid, user_type, full_name, enrollment_or_roll)
+            VALUES (UPPER(TRIM(p_card_uid)), 'STUDENT', 'New Card ('||UPPER(TRIM(p_card_uid))||')', 'PENDING-'||UPPER(TRIM(p_card_uid)))
+            RETURNING id INTO v_new_user_id;
+            
+            UPDATE public.system_state SET mode = 'ATTENDANCE', last_registered_uid = UPPER(TRIM(p_card_uid)), updated_at = NOW() WHERE id = 1;
+            RETURN jsonb_build_object('status', 'REGISTERED', 'user_id', v_new_user_id, 'card_uid', UPPER(TRIM(p_card_uid)), 'lcd1', 'CARD REGISTERED', 'lcd2', 'UID: '||UPPER(TRIM(p_card_uid)));
+        END IF;
+    END IF;
+
+    -- MODE B: ATTENDANCE RUNNING MODE
+    IF NOT FOUND THEN
+        INSERT INTO public.error_logs (card_uid, error_code, error_message, system_mode)
+        VALUES (UPPER(TRIM(p_card_uid)), 'UNREGISTERED_UID', 'Unrecognized ID tag presented during standard tracking loop', 'ATTENDANCE');
+        RETURN jsonb_build_object('status', 'ERROR', 'code', 'USER_NOT_FOUND', 'lcd1', 'USER NOT FOUND', 'lcd2', 'Unregistered ID');
+    END IF;
+
+    -- Enforce single daily log validation check
+    SELECT id INTO v_existing_att FROM public.attendance_logs WHERE user_id = v_user.id AND scan_date = CURRENT_DATE;
+    IF FOUND THEN
+        INSERT INTO public.error_logs (card_uid, user_id, user_name, error_code, error_message, system_mode)
+        VALUES (v_user.card_uid, v_user.id, v_user.full_name, 'DUPLICATE_SCAN', 'Double attendance submission detected', 'ATTENDANCE');
+        RETURN jsonb_build_object('status', 'ERROR', 'code', 'ALREADY_SCANNED', 'lcd1', 'ALREADY RECORDED', 'lcd2', 'Done For Today');
+    END IF;
+
+    -- Write verified checkout row
+    INSERT INTO public.attendance_logs (user_id, card_uid, scan_date, check_in_time, status)
+    VALUES (v_user.id, v_user.card_uid, CURRENT_DATE, NOW(), 'PRESENT');
+    
+    RETURN jsonb_build_object('status', 'SUCCESS', 'user_id', v_user.id, 'user_name', v_user.full_name, 'lcd1', 'HEY, '||UPPER(SPLIT_PART(v_user.full_name, ' ', 1)), 'lcd2', 'Present Marked!');
+END;
+$$;

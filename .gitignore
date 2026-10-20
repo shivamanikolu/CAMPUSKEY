@@ -1,0 +1,11 @@
+# Environment variables
+.env
+.env.local
+
+# Dependency and Tool Artifacts
+node_modules/
+.playwright-mcp/
+
+# OS metadata
+.DS_Store
+Thumbs.db

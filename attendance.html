@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>CampusKey — Attendance</title>
+  <meta name="description" content="View, filter, manage, and export verified RFID attendance records." />
+
+  <!-- Favicon / Minimalist SVG Icon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231D1D1F'><rect x='2' y='5' width='20' height='14' rx='3'/><circle cx='7' cy='15' r='1.2'/><path d='M12 15h6'/></svg>" />
+
+  <!-- Core Stylesheet -->
+  <link rel="stylesheet" href="css/style.css" />
+  <!-- Auth Styles & Guard -->
+  <link rel="stylesheet" href="css/auth.css" />
+
+  <!-- Supabase CDN Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Isolated Auth Guard -->
+  <script src="js/auth.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header id="main-navbar"></header>
+
+  <!-- Printable Header (Only appears on printout) -->
+  <div class="print-header">
+    <h1 style="font-size: 1.5rem; margin-bottom: 0.2rem;">ICFAI School of Science and Technology</h1>
+    <h3 style="font-size: 1.1rem; color: #333; margin-bottom: 0.4rem;">CAMPUSKEY RFID Attendance Register</h3>
+    <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-top: 0.5rem; font-weight: 600;">
+      <span id="print-sheet-date">Date: 2026-10-20</span>
+      <span id="print-sheet-type">Category: Student Attendance</span>
+      <span>Program: BCA / ICSD</span>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="main-wrapper">
+
+    <!-- Header Section -->
+    <section class="page-header">
+      <div class="page-title-wrap">
+        <h2>Attendance</h2>
+        <div class="page-subtitle">Daily records, check-in timestamps, and roster compliance</div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-secondary" onclick="exportAttendanceCSV()">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export CSV
+        </button>
+        <button class="btn-secondary" onclick="printAttendanceSheet()">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print Register
+        </button>
+      </div>
+    </section>
+
+    <!-- Metrics Summary Strip for Selected Date -->
+    <section class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem;">
+      <div class="metric-card" style="padding: 1rem 1.25rem;">
+        <div class="metric-label">Total in Directory</div>
+        <div class="metric-value" id="stat-att-total" style="font-size: 1.7rem; margin-top: 0.35rem;">0</div>
+      </div>
+      <div class="metric-card" style="padding: 1rem 1.25rem;">
+        <div class="metric-label">Marked Present</div>
+        <div class="metric-value" id="stat-att-present" style="font-size: 1.7rem; margin-top: 0.35rem;">0</div>
+      </div>
+      <div class="metric-card" style="padding: 1rem 1.25rem;">
+        <div class="metric-label">Unmarked / Absent</div>
+        <div class="metric-value" id="stat-att-absent" style="font-size: 1.7rem; margin-top: 0.35rem;">0</div>
+      </div>
+      <div class="metric-card" style="padding: 1rem 1.25rem;">
+        <div class="metric-label">Turnout Rate</div>
+        <div class="metric-value" id="stat-att-rate" style="font-size: 1.7rem; margin-top: 0.35rem;">0%</div>
+      </div>
+    </section>
+
+    <!-- Student vs Faculty Directory Tabs -->
+    <div class="tabs-header">
+      <button class="tab-btn active" id="tab-btn-students" onclick="switchTab('STUDENT')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        <span>Students</span>
+        <span class="tab-counter" id="count-students-tab">0</span>
+      </button>
+      <button class="tab-btn" id="tab-btn-faculty" onclick="switchTab('FACULTY')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Faculty & Instructors</span>
+        <span class="tab-counter" id="count-faculty-tab">0</span>
+      </button>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="table-toolbar">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-input" placeholder="Search by name, roll no, card UID..." oninput="renderAttendanceTable()" />
+      </div>
+
+      <div class="filter-actions">
+        <!-- Date Selector -->
+        <input type="date" id="filter-date" class="select-filter" onchange="loadAttendanceData()" />
+
+        <!-- Branch / Dept Filter -->
+        <select id="filter-branch" class="select-filter" onchange="renderAttendanceTable()">
+          <option value="ALL">All Branches</option>
+          <option value="BACHELOR OF COMPUTER APPLICATIONS">BACHELOR OF COMPUTER APPLICATIONS</option>
+          <option value="BACHELOR OF TECHNOLOGY">BACHELOR OF TECHNOLOGY</option>
+          <option value="BACHELOR OF BUSINESS ADMINISTRATION">BACHELOR OF BUSINESS ADMINISTRATION</option>
+          <option value="BACHELOR OF SCIENCE">BACHELOR OF SCIENCE</option>
+          <option value="BACHELOR OF COMMERCE">BACHELOR OF COMMERCE</option>
+        </select>
+
+        <!-- Status Filter -->
+        <select id="filter-status" class="select-filter" onchange="renderAttendanceTable()">
+          <option value="ALL">All Statuses</option>
+          <option value="PRESENT">Present Only</option>
+          <option value="ABSENT">Absent Only</option>
+        </select>
+
+        <!-- 75% Risk Filter -->
+        <select id="filter-risk" class="select-filter" onchange="renderAttendanceTable()">
+          <option value="ALL">Compliance: All</option>
+          <option value="BELOW_75">Below 75% At-Risk</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Attendance Data Table -->
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>User / Profile</th>
+            <th>RFID Card UID</th>
+            <th id="att-col-branch-role">Branch</th>
+            <th>Check-In Time</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Monthly %</th>
+            <th>Admin Action</th>
+          </tr>
+        </thead>
+        <tbody id="attendance-table-body">
+          <tr>
+            <td colspan="8" style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+              Loading attendance data from Supabase...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Attendance Legend / Note -->
+    <div style="margin-top: 1.25rem; display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; color: var(--text-muted); flex-wrap: wrap; gap: 0.75rem;">
+      <div style="display: flex; align-items: center; gap: 1.25rem;">
+        <span style="display: flex; align-items: center; gap: 0.4rem;">
+          <span style="width: 8px; height: 8px; background: #10b981; border-radius: 50%;"></span> Present: Verified RFID scan
+        </span>
+        <span style="display: flex; align-items: center; gap: 0.4rem;">
+          <span style="width: 8px; height: 8px; background: #ef4444; border-radius: 50%;"></span> Below 75%: ICFAI Academic warning
+        </span>
+      </div>
+      <div>Rule: Exactly 1 scan permitted per card per calendar date.</div>
+    </div>
+
+  </main>
+
+  <!-- JavaScript Suite -->
+  <script src="js/config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/nav-component.js"></script>
+  <script src="js/attendance.js"></script>
+</body>
+</html>

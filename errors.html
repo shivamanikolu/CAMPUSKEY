@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>CampusKey — Diagnostics</title>
+  <meta name="description" content="View and troubleshoot RFID card read telemetry, duplicate scan warnings, unauthorized attempts, and hardware wiring status." />
+
+  <!-- Favicon / Minimalist SVG Icon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231D1D1F'><rect x='2' y='5' width='20' height='14' rx='3'/><circle cx='7' cy='15' r='1.2'/><path d='M12 15h6'/></svg>" />
+
+  <!-- Core Stylesheet -->
+  <link rel="stylesheet" href="css/style.css" />
+  <!-- Auth Styles & Guard -->
+  <link rel="stylesheet" href="css/auth.css" />
+
+  <!-- Supabase CDN Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Isolated Auth Guard -->
+  <script src="js/auth.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header id="main-navbar"></header>
+
+  <!-- Main Container -->
+  <main class="main-wrapper">
+
+    <!-- Header Section -->
+    <section class="page-header">
+      <div class="page-title-wrap">
+        <h2>Diagnostics</h2>
+        <div class="page-subtitle">Hardware logs, communication telemetry, and system diagnostics</div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-secondary" onclick="exportErrorLogsCSV()">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export CSV Log
+        </button>
+        <button id="btn-clear-logs" class="btn-secondary" style="color: var(--danger);" onclick="handleClearLogs(this)" title="Purge Diagnostic History">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span id="btn-clear-logs-text">Clear Logs</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 4 Diagnostic Metric Counters (Interactive Filters) -->
+    <section class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem;">
+      <div class="metric-card metric-filter-card active" id="card-filter-all" onclick="filterByCardType('ALL')" style="padding: 1rem 1.25rem;" title="Click to show all events">
+        <div class="metric-label">Total Recorded Events</div>
+        <div class="metric-value" id="stat-err-total" style="font-size: 1.7rem; margin-top: 0.35rem;">0</div>
+        <div class="metric-sub" style="font-size: 0.72rem; margin-top: 0.2rem;">Showing all system logs</div>
+      </div>
+      <div class="metric-card metric-filter-card" id="card-filter-unreg" onclick="filterByCardType('UNREGISTERED_UID')" style="padding: 1rem 1.25rem;" title="Click to filter Unregistered Tags">
+        <div class="metric-label">Unregistered Tags</div>
+        <div class="metric-value" id="stat-err-unreg" style="font-size: 1.7rem; margin-top: 0.35rem;">0</div>
+        <div class="metric-sub" style="font-size: 0.72rem; margin-top: 0.2rem;">Can be 1-click registered</div>
+      </div>
+      <div class="metric-card metric-filter-card" id="card-filter-dup" onclick="filterByCardType('DUPLICATE_SCAN')" style="padding: 1rem 1.25rem;" title="Click to filter Duplicate Scans">
+        <div class="metric-label">Duplicate Scan Blocks</div>
+        <div class="metric-value" id="stat-err-dup" style="font-size: 1.7rem; margin-top: 0.35rem;">0</div>
+        <div class="metric-sub" style="font-size: 0.72rem; margin-top: 0.2rem;">Prevented double count</div>
+      </div>
+      <div class="metric-card metric-filter-card" id="card-filter-other" onclick="filterByCardType('OTHER')" style="padding: 1rem 1.25rem;" title="Click to filter Timeouts & Read Errors">
+        <div class="metric-label">Network / Read Timeouts</div>
+        <div class="metric-value" id="stat-err-other" style="font-size: 1.7rem; margin-top: 0.35rem;">0</div>
+        <div class="metric-sub" style="font-size: 0.72rem; margin-top: 0.2rem;">CRC & coupling errors</div>
+      </div>
+    </section>
+
+    <!-- Toolbar Filters -->
+    <div class="table-toolbar">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-errors" placeholder="Search by Card UID, code, or reason..." oninput="renderDiagnosticTable()" />
+      </div>
+
+      <div class="filter-actions">
+        <!-- Error Type Filter -->
+        <select id="filter-error-code" class="select-filter" onchange="handleDropdownFilterChange(this.value)">
+          <option value="ALL">All Diagnostic Codes</option>
+          <option value="UNREGISTERED_UID">UNREGISTERED_UID (Unassigned ID Tag)</option>
+          <option value="DUPLICATE_SCAN">DUPLICATE_SCAN (Double Attendance)</option>
+          <option value="OTHER">Network / Read Timeouts (CRC & Coupling Errors)</option>
+          <option value="REG_CONFLICT">REG_CONFLICT (Card Collision)</option>
+          <option value="CARD_READ_FAIL">CARD_READ_FAIL (CRC/Coupling Fail)</option>
+          <option value="WIFI_OFFLINE_SYNC">WIFI_OFFLINE_SYNC (Offline Queue)</option>
+          <option value="UNAUTHORIZED_DEVICE">UNAUTHORIZED_DEVICE (Security Alert)</option>
+        </select>
+
+        <button class="btn-secondary" onclick="loadDiagnosticLogs(); showToast('Logs refreshed', 'info');">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Sync
+        </button>
+      </div>
+    </div>
+
+    <!-- Diagnostic Logs Table -->
+    <div class="table-responsive" style="margin-bottom: 2rem;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Timestamp (IST)</th>
+            <th>RFID Card UID</th>
+            <th>Diagnostic Code</th>
+            <th>Target User / Message</th>
+            <th>Recommended Remediation & Cues</th>
+            <th>Quick Resolution</th>
+          </tr>
+        </thead>
+        <tbody id="errors-table-body">
+          <tr>
+            <td colspan="6" style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+              Connecting to Supabase error_logs table...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Hardware Circuit Wiring & Pinout Reference Panel -->
+    <section class="panel-card" style="margin-top: 1.5rem;">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Hardware Breadboard Wiring & Pinout Matrix (NodeMCU ESP8266)
+        </div>
+        <span class="metric-badge badge-neutral">Physical Circuit Specification</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem;">
+        
+        <!-- Module 1: RFID RC522 SPI -->
+        <div style="background: var(--bg-subtle); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1.25rem;">
+          <div style="font-weight: 600; color: var(--text-primary); font-size: 0.88rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span style="width: 7px; height: 7px; background: #1D1D1F; border-radius: 50%;"></span>
+            MFRC522 RFID (SPI Bus)
+          </div>
+          <table style="width: 100%; font-size: 0.78rem; border-collapse: collapse;">
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">3.3V (VCC)</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">3V3 Rail ONLY</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">RST</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">3V3 Rail (Saves GPIO)</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">GND</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Common Ground Rail</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">MISO</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Pin D6 (GPIO 12)</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">MOSI</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Pin D7 (GPIO 13)</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">SCK</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Pin D5 (GPIO 14)</td></tr>
+            <tr><td style="padding: 0.45rem 0; color: var(--text-secondary);">SDA (SS)</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Pin D8 (GPIO 15)</td></tr>
+          </table>
+        </div>
+
+        <!-- Module 2: 16x2 I2C LCD Display -->
+        <div style="background: var(--bg-subtle); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1.25rem;">
+          <div style="font-weight: 600; color: var(--text-primary); font-size: 0.88rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span style="width: 7px; height: 7px; background: #1D1D1F; border-radius: 50%;"></span>
+            16×2 I2C LCD (Custom Lines)
+          </div>
+          <table style="width: 100%; font-size: 0.78rem; border-collapse: collapse;">
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">VCC</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Vin (5V USB for Contrast)</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">GND</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Common Ground Rail</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">SDA</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Pin D4 (Custom I2C)</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">SCL</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Pin D3 (Custom I2C)</td></tr>
+            <tr><td style="padding: 0.45rem 0; color: var(--text-secondary);">I2C Address</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">0x27 (Default PCF8574)</td></tr>
+          </table>
+        </div>
+
+        <!-- Module 3: Audio & Visual Indicators -->
+        <div style="background: var(--bg-subtle); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1.25rem;">
+          <div style="font-weight: 600; color: var(--text-primary); font-size: 0.88rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span style="width: 7px; height: 7px; background: #1D1D1F; border-radius: 50%;"></span>
+            Feedback Cues (LEDs & Buzzer)
+          </div>
+          <table style="width: 100%; font-size: 0.78rem; border-collapse: collapse;">
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">Green LED (+)</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Pin D1 (220Ω to GND)</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">Red LED (+)</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Pin D2 (220Ω to GND)</td></tr>
+            <tr style="border-bottom: 1px solid var(--border-subtle);"><td style="padding: 0.45rem 0; color: var(--text-secondary);">5V Active Buzzer (+)</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Pin D0 (Direct GPIO)</td></tr>
+            <tr><td style="padding: 0.45rem 0; color: var(--text-secondary);">Cathodes (-)</td><td style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Shared Blue GND Rail</td></tr>
+          </table>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- JavaScript Suite -->
+  <script src="js/config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/nav-component.js"></script>
+  <script src="js/errors.js"></script>
+</body>
+</html>
